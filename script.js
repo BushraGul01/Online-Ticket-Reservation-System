@@ -83,6 +83,28 @@ function initializeForms() {
     // Search form
     const searchForm = document.getElementById('search-form');
     searchForm.addEventListener('submit', handleSearchSubmit);
+
+    // Availability Message Logic
+    ['from-city', 'to-city', 'travel-date'].forEach(id => {
+        document.getElementById(id).addEventListener('change', updateAvailability);
+        document.getElementById(id).addEventListener('input', updateAvailability);
+    });
+}
+
+function updateAvailability() {
+    const from = document.getElementById('from-city').value;
+    const to = document.getElementById('to-city').value;
+    const messageEl = document.getElementById('availability-message');
+
+    if (from && to) {
+        // Simple simulation of availability
+        const count = Math.floor(Math.random() * (50 - 10 + 1)) + 10;
+        messageEl.innerHTML = `⚡ <strong>${count} buses</strong> available for this route`;
+        messageEl.style.opacity = '1';
+    } else {
+        messageEl.innerHTML = '';
+        messageEl.style.opacity = '0';
+    }
 }
 
 function swapCities() {
@@ -99,6 +121,11 @@ function handleBookingFormSubmit(e) {
     const travelDate = document.getElementById('travel-date').value;
     const passengers = document.getElementById('passengers').value;
     const mode = document.getElementById('travel-mode').value;
+
+    if (fromCity === toCity) {
+        alert('Origin and Destination cities cannot be the same.');
+        return;
+    }
 
     // Navigate to search page and populate search form
     navigateToPage('search');
@@ -124,9 +151,35 @@ function handleSearchSubmit(e) {
     const passengers = document.getElementById('search-passengers').value;
     const mode = document.getElementById('search-mode').value;
 
+    if (fromCity === toCity) {
+        alert('Origin and Destination cities cannot be the same.');
+        return;
+    }
+
     if (!fromCity || !toCity || !travelDate || !mode) {
         alert('Please fill in all search fields and select a travel mode');
         return;
+    }
+
+    if (mode === 'air') {
+        const shortDistancePairs = [
+            ['Islamabad', 'Rawalpindi'],
+            ['Lahore', 'Gujranwala'],
+            ['Karachi', 'Hyderabad'],
+            ['Peshawar', 'Mardan'],
+            ['Islamabad', 'Murree'],
+            ['Rawalpindi', 'Murree'],
+            ['Abbottabad', 'Murree']
+        ];
+
+        const isShortDistance = shortDistancePairs.some(pair =>
+            (pair.includes(fromCity) && pair.includes(toCity))
+        );
+
+        if (isShortDistance) {
+            alert(`Air travel is not available between ${fromCity} and ${toCity} due to short distance.`);
+            return;
+        }
     }
 
     performSearch(fromCity, toCity, travelDate, passengers, mode);
@@ -140,6 +193,50 @@ function performSearch(fromCity, toCity, travelDate, passengers, mode) {
 }
 
 
+
+// Helper to generate mock tickets
+function generateMockTickets(from, to, date, passengers, mode) {
+    const tickets = [];
+    const count = Math.floor(Math.random() * 5) + 3; // 3 to 7 tickets
+
+    const types = ['Standard', 'Luxury', 'Business'];
+    const times = ['08:00', '10:30', '13:15', '16:45', '20:00', '22:30'];
+
+    for (let i = 0; i < count; i++) {
+        const type = types[Math.floor(Math.random() * types.length)];
+        const depTime = times[Math.floor(Math.random() * times.length)];
+
+        // Calculate arrival time (random duration 2-6 hours)
+        const durationHours = Math.floor(Math.random() * 4) + 2;
+        const [depHour, depMin] = depTime.split(':').map(Number);
+        const arrHour = (depHour + durationHours) % 24;
+        const arrTime = `${arrHour.toString().padStart(2, '0')}:${depMin.toString().padStart(2, '0')}`;
+
+        // Base price calculation
+        let basePrice = 1200;
+        if (mode === 'air') basePrice = 15000;
+        if (mode === 'rail') basePrice = 2500;
+
+        const price = basePrice + (type === 'Luxury' ? 500 : type === 'Business' ? 1000 : 0) + Math.floor(Math.random() * 200);
+
+        tickets.push({
+            id: `TK-${Date.now()}-${i}`,
+            from: from,
+            to: to,
+            date: date,
+            type: type,
+            mode: mode,
+            departure: depTime,
+            arrival: arrTime,
+            duration: `${durationHours}h 00m`,
+            price: price,
+            totalSeats: 40,
+            availableSeats: Math.floor(Math.random() * 20) + 10
+        });
+    }
+
+    return tickets.sort((a, b) => a.price - b.price);
+}
 
 function displaySearchResults(tickets) {
     const resultsContainer = document.getElementById('search-results');
@@ -185,20 +282,52 @@ function displaySearchResults(tickets) {
                 </div>
             </div>
             <div class="ticket-actions">
-                <button class="btn-primary" onclick="selectTicket('${ticket.id}')">Select Seats</button>
+                <button class="btn-primary select-ticket-btn" data-ticket-id="${ticket.id}">Select Seats</button>
             </div>
         </div>
     `).join('');
 }
 
+// Global Event Delegation for Ticket Selection
+document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.select-ticket-btn');
+    if (btn) {
+        console.log('Select Seat button clicked');
+        const ticketId = btn.getAttribute('data-ticket-id');
+        console.log('Ticket ID from data attribute:', ticketId);
+        selectTicket(ticketId);
+    }
+});
+
 // Ticket Selection
 function selectTicket(ticketId) {
-    const ticket = appState.availableTickets.find(t => t.id === ticketId);
-    if (!ticket) return;
+    console.log('Selecting ticket via delegation:', ticketId); // Debug log
+    try {
+        if (!appState.availableTickets || appState.availableTickets.length === 0) {
+            console.error('No available tickets in state');
+            alert('Error: No tickets found. Please search again.');
+            return;
+        }
 
-    appState.selectedTicket = ticket;
-    appState.selectedSeats = [];
-    openSeatModal();
+        const ticket = appState.availableTickets.find(t => t.id === ticketId);
+
+        if (!ticket) {
+            console.error('Ticket not found for ID:', ticketId);
+            // Fallback: try to find by index if ID fails or something weird happened
+            // This is a safety net
+            const ticketByIndex = appState.availableTickets[0]; // Logic could be improved but just debugging
+            alert('Error: Ticket not found. Please try again.');
+            return;
+        }
+
+        console.log('Ticket found:', ticket);
+        appState.selectedTicket = ticket;
+        appState.selectedSeats = [];
+        openSeatModal();
+    } catch (err) {
+        console.error('Error in selectTicket:', err);
+        alert('An unexpected error occurred. Please try again.');
+    }
 }
 
 // Modal Management
@@ -494,6 +623,44 @@ function cancelBooking(bookingId) {
 
 // Utility Functions
 
+function calculateTotalPrice(seatsCount, pricePerSeat) {
+    return seatsCount * pricePerSeat;
+}
+
+function formatDate(dateString) {
+    const options = { year: 'numeric', month: 'long', day: 'numeric' };
+    return new Date(dateString).toLocaleDateString('en-US', options);
+}
+
+function canSelectMoreSeats(currentSeatsCount, maxPassengers) {
+    return currentSeatsCount < maxPassengers;
+}
+
+function isValidCard(number, expiry, cvv) {
+    // Basic validation logic
+    if (number.length < 16) return false;
+    if (expiry.length !== 5) return false;
+    if (cvv.length !== 3) return false;
+
+    // Expiry Date Validation
+    const [monthStr, yearStr] = expiry.split('/');
+    if (!monthStr || !yearStr) return false;
+
+    const month = parseInt(monthStr, 10);
+    const year = parseInt('20' + yearStr, 10);
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // 0-indexed
+
+    if (month < 1 || month > 12) return false;
+
+    // Check if expired
+    if (year < currentYear || (year === currentYear && month < currentMonth)) {
+        return false;
+    }
+
+    return true;
+}
 
 function formatCardNumber(e) {
     let value = e.target.value.replace(/\s/g, '');
@@ -680,9 +847,23 @@ function handleLoginSubmit(e) {
     closeLoginModalFunc();
 }
 
+// Popular Route Selection
+function selectPopularRoute(from, to) {
+    document.getElementById('from-city').value = from;
+    document.getElementById('to-city').value = to;
+
+    // Scroll to booking form smoothly
+    document.querySelector('.booking-form-card').scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+    });
+}
+
 // Make functions available globally for onclick handlers
 window.selectTicket = selectTicket;
 window.cancelBooking = cancelBooking;
+window.selectPopularRoute = selectPopularRoute;
+window.toggleSeat = toggleSeat;
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
